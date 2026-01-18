@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  ai-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ai-agent
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+    volumes:
+      # Mount plugins directory for easy plugin updates
+      - ./plugins:/app/plugins:ro
+      # Optional: Mount logs directory
+      - ./logs:/app/logs
+    # Uncomment if you need Docker access from within the container
+    # volumes:
+    #   - /var/run/docker.sock:/var/run/docker.sock
+    # For CLI mode, use stdin_open and tty
+    stdin_open: true
+    tty: true
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
