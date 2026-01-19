@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { mkdirSync } from 'fs';
 import path from 'path';
 import type { WorkflowEngine } from './workflow-engine.js';
+import { logger } from '../utils/logger.js';
 
 export interface ScheduledTask {
   id: string;
@@ -122,7 +123,7 @@ export class SchedulerEngine {
       return;
     }
 
-    console.log('Starting scheduler engine...');
+    logger.info('Starting scheduler engine...');
     this.intervalId = setInterval(() => {
       this.checkAndExecuteTasks();
     }, this.checkIntervalMs);
@@ -135,7 +136,7 @@ export class SchedulerEngine {
     if (this.intervalId) {
       clearInterval(this.intervalId);
       this.intervalId = null;
-      console.log('Scheduler engine stopped');
+      logger.info('Scheduler engine stopped');
     }
   }
 
@@ -328,7 +329,7 @@ export class SchedulerEngine {
 
   private async checkAndExecuteTasks(): Promise<void> {
     if (!this.workflowEngine) {
-      console.warn('WorkflowEngine not set, skipping task execution');
+      logger.warn('WorkflowEngine not set, skipping task execution');
       return;
     }
 
@@ -341,11 +342,11 @@ export class SchedulerEngine {
         }
 
         this.executeTask(task).catch((error) => {
-          console.error(`Error executing task ${task.name}:`, error);
+          logger.error(`Error executing task ${task.name}:`, error);
         });
       }
     } catch (error) {
-      console.error('Error checking for due tasks:', error);
+      logger.error('Error checking for due tasks:', error);
     }
   }
 
@@ -358,7 +359,7 @@ export class SchedulerEngine {
     let result: unknown = null;
 
     try {
-      console.log(`Executing scheduled task: ${task.name} (workflow: ${task.workflowName})`);
+      logger.info(`Executing scheduled task: ${task.name} (workflow: ${task.workflowName})`);
 
       const parameters = JSON.parse(task.parameters);
 
@@ -374,11 +375,11 @@ export class SchedulerEngine {
         error = workflowResult.error || 'Workflow execution failed';
       }
 
-      console.log(`Task ${task.name} completed with success=${success}`);
+      logger.info(`Task ${task.name} completed with success=${success}`);
     } catch (err) {
       success = false;
       error = err instanceof Error ? err.message : String(err);
-      console.error(`Task ${task.name} failed:`, error);
+      logger.error(`Task ${task.name} failed:`, error);
     } finally {
       this.updateTaskAfterExecution(task.id, task);
 

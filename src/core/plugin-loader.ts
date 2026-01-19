@@ -3,6 +3,7 @@ import { join, resolve } from 'path';
 import { Plugin, Tool, Workflow } from '../types/plugin.js';
 import type { WorkflowEngine } from './workflow-engine.js';
 import type { Agent } from './agent.js';
+import { logger } from '../utils/logger.js';
 
 interface PendingPlugin {
   path: string;
@@ -26,7 +27,7 @@ export class PluginLoader {
    */
   async loadPlugins(): Promise<void> {
     const pluginsPath = resolve(this._pluginsDir);
-    console.log(`Loading plugins from: ${pluginsPath}`);
+    logger.info(`Loading plugins from: ${pluginsPath}`);
 
     try {
       const entries = await readdir(pluginsPath, { withFileTypes: true });
@@ -39,12 +40,12 @@ export class PluginLoader {
         await this.initializePlugin(pending);
       }
 
-      console.log(`Loaded ${this.plugins.size} plugins`);
-      console.log(`Registered ${this.tools.size} tools`);
-      console.log(`Registered ${this.workflows.size} workflows`);
+      logger.info(`Loaded ${this.plugins.size} plugins`);
+      logger.info(`Registered ${this.tools.size} tools`);
+      logger.info(`Registered ${this.workflows.size} workflows`);
     } catch (error) {
       if ((error as {code?: string}).code === 'ENOENT') {
-        console.warn(`Plugins directory not found: ${pluginsPath}`);
+        logger.warn(`Plugins directory not found: ${pluginsPath}`);
       } else {
         throw error;
       }
@@ -72,13 +73,13 @@ export class PluginLoader {
             : pluginModule.default;
 
         if (!this.validatePlugin(plugin)) {
-          console.error(`Invalid plugin at ${pluginPath}`);
+          logger.error(`Invalid plugin at ${pluginPath}`);
           continue;
         }
 
         pending.push({ path: pluginPath, plugin });
       } catch (error) {
-        console.error(`Failed to load plugin from ${pluginPath}:`, error);
+        logger.error(`Failed to load plugin from ${pluginPath}:`, error);
       }
     }
 
@@ -138,14 +139,14 @@ export class PluginLoader {
       await plugin.initialize();
 
       this.plugins.set(plugin.metadata.name, plugin);
-      console.log(
+      logger.info(
         `Loaded plugin: ${plugin.metadata.name} v${plugin.metadata.version}`
       );
 
       const tools = plugin.getTools();
       for (const tool of tools) {
         if (this.tools.has(tool.definition.name)) {
-          console.warn(
+          logger.warn(
             `Tool ${tool.definition.name} already registered, skipping`
           );
           continue;
@@ -154,13 +155,13 @@ export class PluginLoader {
           source: plugin.metadata.name,
           tool,
         });
-        console.log(`  - Registered tool: ${tool.definition.name}`);
+        logger.debug(`  - Registered tool: ${tool.definition.name}`);
       }
 
       const workflows = plugin.getWorkflows();
       for (const workflow of workflows) {
         if (this.workflows.has(workflow.name)) {
-          console.warn(
+          logger.warn(
             `Workflow ${workflow.name} already registered, skipping`
           );
           continue;
@@ -169,10 +170,10 @@ export class PluginLoader {
           plugin: plugin.metadata.name,
           workflow,
         });
-        console.log(`  - Registered workflow: ${workflow.name}`);
+        logger.debug(`  - Registered workflow: ${workflow.name}`);
       }
     } catch (error) {
-      console.error(`Failed to initialize plugin ${plugin.metadata.name}:`, error);
+      logger.error(`Failed to initialize plugin ${plugin.metadata.name}:`, error);
     }
   }
 
@@ -201,11 +202,11 @@ export class PluginLoader {
   registerCoreTools(source: string, tools: Tool[]): void {
     for (const tool of tools) {
       if (this.tools.has(tool.definition.name)) {
-        console.warn(`Tool ${tool.definition.name} already registered, skipping`);
+        logger.warn(`Tool ${tool.definition.name} already registered, skipping`);
         continue;
       }
       this.tools.set(tool.definition.name, { source, tool });
-      console.log(`Registered core tool: ${tool.definition.name} (from ${source})`);
+      logger.debug(`Registered core tool: ${tool.definition.name} (from ${source})`);
     }
   }
 
@@ -258,7 +259,7 @@ export class PluginLoader {
     for (const plugin of this.plugins.values()) {
       if ('setWorkflowEngine' in plugin && typeof plugin.setWorkflowEngine === 'function') {
         plugin.setWorkflowEngine(workflowEngine);
-        console.log(`Injected WorkflowEngine into plugin: ${plugin.metadata.name}`);
+        logger.debug(`Injected WorkflowEngine into plugin: ${plugin.metadata.name}`);
       }
     }
   }
@@ -270,7 +271,7 @@ export class PluginLoader {
     for (const plugin of this.plugins.values()) {
       if ('setAgent' in plugin && typeof plugin.setAgent === 'function') {
         plugin.setAgent(agent);
-        console.log(`Injected Agent into plugin: ${plugin.metadata.name}`);
+        logger.debug(`Injected Agent into plugin: ${plugin.metadata.name}`);
       }
     }
   }
@@ -282,7 +283,7 @@ export class PluginLoader {
     for (const plugin of this.plugins.values()) {
       if ('setPluginLoader' in plugin && typeof plugin.setPluginLoader === 'function') {
         plugin.setPluginLoader(this);
-        console.log(`Injected PluginLoader into plugin: ${plugin.metadata.name}`);
+        logger.debug(`Injected PluginLoader into plugin: ${plugin.metadata.name}`);
       }
     }
   }
@@ -296,7 +297,7 @@ export class PluginLoader {
         try {
           await plugin.cleanup();
         } catch (error) {
-          console.error(
+          logger.error(
             `Error cleaning up plugin ${plugin.metadata.name}:`,
             error
           );

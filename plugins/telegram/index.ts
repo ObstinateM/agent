@@ -6,6 +6,7 @@ import type { WorkflowEngine } from '../../src/core/workflow-engine.js';
 import type { PluginLoader } from '../../src/core/plugin-loader.js';
 import { createTools } from './tools.js';
 import { createWorkflows } from './workflows.js';
+import { logger } from '../../src/utils/logger.js';
 
 /**
  * Telegram plugin provides a Telegram bot interface for the AI Agent.
@@ -27,16 +28,19 @@ class TelegramPlugin implements Plugin {
 
   async initialize(): Promise<void> {
     const token = process.env.TELEGRAM_BOT_TOKEN;
-    const interfaceMode = process.env.INTERFACE_MODE;
+    const interfaceMode = process.env.INTERFACE_MODE || 'cli';
 
-    // Only initialize if we're in telegram mode
-    if (interfaceMode !== 'telegram') {
-      console.log('Telegram plugin loaded but not active (INTERFACE_MODE != telegram)');
+    // Parse comma-separated interface modes
+    const enabledInterfaces = interfaceMode.split(',').map((m) => m.trim().toLowerCase());
+
+    // Only initialize if telegram is in the enabled interfaces
+    if (!enabledInterfaces.includes('telegram')) {
+      logger.debug('Telegram plugin loaded but not active (telegram not in INTERFACE_MODE)');
       return;
     }
 
     if (!token) {
-      console.warn('TELEGRAM_BOT_TOKEN not set, Telegram plugin will not start');
+      logger.warn('TELEGRAM_BOT_TOKEN not set, Telegram plugin will not start');
       return;
     }
 
@@ -53,7 +57,7 @@ class TelegramPlugin implements Plugin {
     this.bot = new Telegraf(token);
     this.setupHandlers();
 
-    console.log('Telegram plugin initialized');
+    logger.info('Telegram plugin initialized');
   }
 
   /**
@@ -85,14 +89,14 @@ class TelegramPlugin implements Plugin {
       throw new Error('Telegram bot not initialized');
     }
 
-    console.log('Starting Telegram bot...');
+    logger.info('Starting Telegram bot...');
     await this.bot.launch();
-    console.log('✨ Telegram bot is ready!');
+    logger.info('Telegram bot is ready!');
 
     if (this.allowedUsers.size > 0) {
-      console.log(`📋 Allowed users: ${Array.from(this.allowedUsers).join(', ')}`);
+      logger.info(`Allowed users: ${Array.from(this.allowedUsers).join(', ')}`);
     } else {
-      console.log('⚠️  Warning: No user restrictions set. Anyone can use the bot!');
+      logger.warn('No user restrictions set. Anyone can use the bot!');
     }
 
     process.once('SIGINT', () => this.stopBot());
@@ -111,7 +115,7 @@ class TelegramPlugin implements Plugin {
     this.bot.on('text', (ctx) => this.handleMessage(ctx));
 
     this.bot.catch((err, ctx) => {
-      console.error('Telegram bot error:', err);
+      logger.error('Telegram bot error:', err);
       ctx.reply('An error occurred. Please try again.');
     });
   }
@@ -224,7 +228,7 @@ class TelegramPlugin implements Plugin {
         await ctx.reply(`❌ Workflow failed: ${result.error}`);
       }
     } catch (error) {
-      console.error('Workflow execution error:', error);
+      logger.error('Workflow execution error:', error);
       await ctx.reply(`❌ Error: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
@@ -285,14 +289,14 @@ class TelegramPlugin implements Plugin {
       const response = await this.agent.chat(message);
       await ctx.reply(response);
     } catch (error) {
-      console.error('Chat error:', error);
+      logger.error('Chat error:', error);
       await ctx.reply(`❌ Error: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
   private stopBot(): void {
     if (this.bot) {
-      console.log('Stopping Telegram bot...');
+      logger.info('Stopping Telegram bot...');
       this.bot.stop();
     }
   }
@@ -307,7 +311,7 @@ class TelegramPlugin implements Plugin {
 
   async cleanup(): Promise<void> {
     this.stopBot();
-    console.log('Telegram plugin cleaned up');
+    logger.info('Telegram plugin cleaned up');
   }
 }
 

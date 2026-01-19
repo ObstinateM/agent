@@ -2,6 +2,7 @@ import prompts from 'prompts';
 import { Agent } from '../core/agent.js';
 import { WorkflowEngine } from '../core/workflow-engine.js';
 import { PluginLoader } from '../core/plugin-loader.js';
+import { logger } from '../utils/logger.js';
 
 /**
  * Command-line interface for the AI Agent.
@@ -123,7 +124,8 @@ export class CLI {
           try {
             params = JSON.parse(parts.slice(1).join(' '));
           } catch {
-            console.error('Invalid JSON parameters');
+            logger.error('Invalid JSON parameters');
+            console.log('Invalid JSON parameters');
             continue;
           }
         }
@@ -136,7 +138,8 @@ export class CLI {
             console.log(`\n❌ Workflow failed: ${result.error}`);
           }
         } catch (error) {
-          console.error('\n❌ Error executing workflow:', error);
+          logger.error('Error executing workflow:', error);
+          console.log(`\n❌ Error executing workflow: ${error instanceof Error ? error.message : String(error)}`);
         }
         console.log();
         continue;
@@ -146,8 +149,8 @@ export class CLI {
         const response = await this.agent.chat(command);
         console.log(`\n🤖 ${response}\n`);
       } catch (error) {
-        console.error('\n❌ Error:', error);
-        console.log();
+        logger.error('Chat error:', error);
+        console.log(`\n❌ Error: ${error instanceof Error ? error.message : String(error)}\n`);
       }
     }
   }

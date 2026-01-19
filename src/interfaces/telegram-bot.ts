@@ -3,6 +3,7 @@ import { Message } from 'telegraf/types';
 import { Agent } from '../core/agent.js';
 import { WorkflowEngine } from '../core/workflow-engine.js';
 import { PluginLoader } from '../core/plugin-loader.js';
+import { logger } from '../utils/logger.js';
 
 interface TelegramBotConfig {
   token: string;
@@ -45,7 +46,7 @@ export class TelegramBot {
     this.bot.on('text', (ctx) => this.handleMessage(ctx));
 
     this.bot.catch((err, ctx) => {
-      console.error('Telegram bot error:', err);
+      logger.error('Telegram bot error:', err);
       ctx.reply('An error occurred. Please try again.');
     });
   }
@@ -143,7 +144,7 @@ export class TelegramBot {
         await ctx.reply(`❌ Workflow failed: ${result.error}`);
       }
     } catch (error) {
-      console.error('Workflow execution error:', error);
+      logger.error('Workflow execution error:', error);
       await ctx.reply(`❌ Error: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
@@ -194,7 +195,7 @@ export class TelegramBot {
       const response = await this.agent.chat(message);
       await ctx.reply(response);
     } catch (error) {
-      console.error('Chat error:', error);
+      logger.error('Chat error:', error);
       await ctx.reply(`❌ Error: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
@@ -203,9 +204,9 @@ export class TelegramBot {
    * Start the Telegram bot
    */
   async start(): Promise<void> {
-    console.log('Starting Telegram bot...');
+    logger.info('Starting Telegram bot...');
     await this.bot.launch();
-    console.log('Telegram bot is running!');
+    logger.info('Telegram bot is running!');
 
     process.once('SIGINT', () => this.stop());
     process.once('SIGTERM', () => this.stop());
@@ -215,7 +216,7 @@ export class TelegramBot {
    * Stop the Telegram bot gracefully
    */
   async stop(): Promise<void> {
-    console.log('Stopping Telegram bot...');
+    logger.info('Stopping Telegram bot...');
     this.bot.stop();
   }
 }

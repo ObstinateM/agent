@@ -4,19 +4,27 @@ This directory contains all plugins for the AI Agent system. Plugins are automat
 
 ## Plugin Structure
 
-Each plugin must be a directory containing an `index.ts` (or `index.js` after build) file that exports a Plugin instance:
+Each plugin should have the following structure:
 
 ```
 plugins/
 └── your-plugin/
-    └── index.ts
+    ├── index.ts       # Main plugin file (required)
+    ├── tools.ts       # Tool definitions (recommended)
+    ├── workflows.ts   # Workflow definitions (recommended)
+    ├── README.md      # Plugin documentation (required)
+    └── __tests__/     # Tests (recommended)
 ```
 
-## Creating a Plugin
+## Available Plugins
 
-See the example plugins in this directory:
-- `docker/` - Docker container management
-- `script-runner/` - Shell script execution
+- `memory/` - Long-term memory storage for the agent
+- `telegram/` - Telegram bot interface for remote access
+- `idfm/` - Île-de-France Mobilités transit data
+
+See each plugin's README.md for documentation.
+
+## Creating a Plugin
 
 Your plugin must implement the `Plugin` interface from `src/types/plugin.ts`.
 
@@ -26,6 +34,22 @@ Your plugin must implement the `Plugin` interface from `src/types/plugin.ts`.
 2. Implement all required methods: `initialize()`, `getTools()`, `getWorkflows()`
 3. Provide metadata (name, version, description)
 4. Use Zod schemas for tool parameter validation
+5. Include a README.md with usage, configuration, and examples
+
+## Plugin Dependencies
+
+Plugins can declare dependencies on other plugins via the `dependencies` array in metadata:
+
+```typescript
+metadata = {
+  name: 'my-plugin',
+  version: '1.0.0',
+  description: 'My plugin',
+  dependencies: ['memory', 'telegram'], // Will load after these plugins
+};
+```
+
+The plugin loader will ensure dependencies are loaded first and detect circular dependencies.
 
 ## Loading Plugins
 

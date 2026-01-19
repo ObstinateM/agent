@@ -6,6 +6,7 @@ import {
 import { Tool, toolToOpenAIFunction } from '../types/plugin.js';
 import { PluginLoader } from './plugin-loader.js';
 import { executeTool } from './tool-executor.js';
+import { logger } from '../utils/logger.js';
 
 /**
  * Main AI Agent that orchestrates LLM interactions and tool execution
@@ -61,8 +62,8 @@ export class Agent {
         const functionName = message.function_call.name;
         const parsedArgs = this.parseFunctionArgs(message.function_call.arguments);
 
-        console.log(`\nExecuting tool: ${functionName}`);
-        console.log(`Arguments:`, parsedArgs.ok ? parsedArgs.value : message.function_call.arguments);
+        logger.debug(`Executing tool: ${functionName}`);
+        logger.debug(`Arguments:`, parsedArgs.ok ? parsedArgs.value : message.function_call.arguments);
 
         const result = parsedArgs.ok
           ? await executeTool(this._pluginLoader, functionName, parsedArgs.value)

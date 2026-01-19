@@ -7,6 +7,7 @@ import {
 import { Workflow } from '../types/plugin.js';
 import { PluginLoader } from './plugin-loader.js';
 import { executeTool } from './tool-executor.js';
+import { logger } from '../utils/logger.js';
 
 /**
  * Configuration for WorkflowEngine
@@ -190,13 +191,13 @@ Rules:
     const results: WorkflowExecutionResult['steps'] = [];
     const context = { ...variables };
 
-    console.log(`\nExecuting workflow: ${workflow.name}`);
-    console.log(`Description: ${workflow.description}`);
+    logger.info(`Executing workflow: ${workflow.name}`);
+    logger.debug(`Description: ${workflow.description}`);
 
     for (let i = 0; i < workflow.steps.length; i++) {
       const step = workflow.steps[i];
-      console.log(
-        `\nStep ${i + 1}/${workflow.steps.length}: ${step.description || step.toolName}`
+      logger.debug(
+        `Step ${i + 1}/${workflow.steps.length}: ${step.description || step.toolName}`
       );
 
       const resolvedParams = this.resolveParams(step.params, context);
@@ -209,7 +210,7 @@ Rules:
       });
 
       if (!result.success) {
-        console.error(`Step ${i + 1} failed:`, result.error);
+        logger.error(`Step ${i + 1} failed:`, result.error);
         return {
           success: false,
           steps: results,
@@ -218,10 +219,10 @@ Rules:
       }
 
       context[`step${i}_result`] = result.result;
-      console.log(`Step ${i + 1} completed successfully`);
+      logger.debug(`Step ${i + 1} completed successfully`);
     }
 
-    console.log(`\nWorkflow ${workflow.name} completed successfully`);
+    logger.info(`Workflow ${workflow.name} completed successfully`);
 
     return {
       success: true,

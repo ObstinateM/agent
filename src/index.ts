@@ -5,13 +5,24 @@ import { WorkflowEngine } from './core/workflow-engine.js';
 import { SchedulerEngine } from './core/scheduler-engine.js';
 import { createSchedulerTools } from './core/scheduler-tools.js';
 import { CLI } from './interfaces/cli.js';
+import { logger } from './utils/logger.js';
+
+/**
+ * Parse INTERFACE_MODE environment variable into a set of enabled interfaces.
+ */
+function parseInterfaceModes(): Set<string> {
+  const modeStr = process.env.INTERFACE_MODE || 'cli';
+  const modes = modeStr.split(',').map((m) => m.trim().toLowerCase()).filter((m) => m);
+  return new Set(modes.length > 0 ? modes : ['cli']);
+}
 
 /**
  * Main entry point for the AI Agent system.
- * Supports both CLI and Telegram bot interfaces based on environment configuration.
+ * Supports multiple interfaces (CLI, Telegram) running simultaneously.
+ * Configure via INTERFACE_MODE env var (comma-separated, e.g., "cli,telegram").
  */
 async function main() {
-  console.log('🤖 AI Agent System Starting...\n');
+  logger.info('AI Agent System Starting...');
 
   const openaiApiKey = process.env.OPENAI_API_KEY || '';
   const openaiModel = process.env.OPENAI_MODEL || 'gpt-4-turbo-preview';
@@ -20,8 +31,8 @@ You can help manage Docker containers, run shell scripts, and execute predefined
 Always be clear about what actions you're taking and ask for confirmation when performing potentially destructive operations.`;
 
   if (!openaiApiKey) {
-    console.error('❌ Error: OPENAI_API_KEY environment variable is not set');
-    console.log('Please set it in your .env file or environment');
+    logger.error('OPENAI_API_KEY environment variable is not set');
+    logger.info('Please set it in your .env file or environment');
     process.exit(1);
   }
 
@@ -53,7 +64,7 @@ Always be clear about what actions you're taking and ask for confirmation when p
   pluginLoader.setPluginLoaderReference();
 
   const cleanup = async () => {
-    console.log('\nShutting down...');
+    logger.info('Shutting down...');
     schedulerEngine.close();
     await pluginLoader.cleanup();
     process.exit(0);
@@ -62,31 +73,41 @@ Always be clear about what actions you're taking and ask for confirmation when p
   process.on('SIGINT', cleanup);
   process.on('SIGTERM', cleanup);
 
-  const interfaceMode = process.env.INTERFACE_MODE || 'cli';
+  const enabledInterfaces = parseInterfaceModes();
+  logger.info(`Enabled interfaces: ${Array.from(enabledInterfaces).join(', ')}`);
 
-  if (interfaceMode === 'telegram') {
+  // Start Telegram if enabled
+  if (enabledInterfaces.has('telegram')) {
     const telegramPlugin = pluginLoader.getPlugin('telegram');
 
     if (!telegramPlugin) {
-      console.error('❌ Error: Telegram plugin not found');
-      console.log('The telegram plugin should be in plugins/telegram/');
-      process.exit(1);
-    }
-
-    if ('startBot' in telegramPlugin && typeof telegramPlugin.startBot === 'function') {
+      logger.error('Telegram plugin not found');
+      logger.info('The telegram plugin should be in plugins/telegram/');
+      if (!enabledInterfaces.has('cli')) {
+        process.exit(1);
+      }
+    } else if ('startBot' in telegramPlugin && typeof telegramPlugin.startBot === 'function') {
       await telegramPlugin.startBot();
     } else {
-      console.error('❌ Error: Telegram plugin does not have a startBot method');
-      process.exit(1);
+      logger.error('Telegram plugin does not have a startBot method');
+      if (!enabledInterfaces.has('cli')) {
+        process.exit(1);
+      }
     }
-  } else {
-    console.log('Starting CLI interface...\n');
+  }
+
+  // Start CLI if enabled (this blocks, so it must be last)
+  if (enabledInterfaces.has('cli')) {
+    logger.info('Starting CLI interface...');
     const cli = new CLI(agent, workflowEngine, pluginLoader);
     await cli.start();
+  } else {
+    // If no CLI, keep the process alive for other interfaces
+    logger.info('Running without CLI. Press Ctrl+C to stop.');
   }
 }
 
 main().catch((error) => {
-  console.error('Fatal error:', error);
+  logger.error('Fatal error:', error);
   process.exit(1);
 });
