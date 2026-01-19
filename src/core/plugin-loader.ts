@@ -4,9 +4,14 @@ import { Plugin, Tool, Workflow } from '../types/plugin.js';
 import type { WorkflowEngine } from './workflow-engine.js';
 import type { Agent } from './agent.js';
 
+interface PendingPlugin {
+  path: string;
+  plugin: Plugin;
+}
+
 /**
  * PluginLoader handles auto-discovery and loading of plugins.
- * Also supports registering core tools that aren't part of plugins.
+ * Supports plugin dependencies and core tool registration.
  */
 export class PluginLoader {
   private plugins: Map<string, Plugin> = new Map();
@@ -16,7 +21,8 @@ export class PluginLoader {
   constructor(private _pluginsDir: string) {}
 
   /**
-   * Discover and load all plugins from the plugins directory
+   * Discover and load all plugins from the plugins directory.
+   * Plugins are loaded in dependency order.
    */
   async loadPlugins(): Promise<void> {
     const pluginsPath = resolve(this._pluginsDir);
@@ -26,8 +32,11 @@ export class PluginLoader {
       const entries = await readdir(pluginsPath, { withFileTypes: true });
       const pluginDirs = entries.filter((entry) => entry.isDirectory());
 
-      for (const dir of pluginDirs) {
-        await this.loadPlugin(join(pluginsPath, dir.name));
+      const pendingPlugins = await this.discoverPlugins(pluginDirs, pluginsPath);
+      const sortedPlugins = this.sortByDependencies(pendingPlugins);
+
+      for (const pending of sortedPlugins) {
+        await this.initializePlugin(pending);
       }
 
       console.log(`Loaded ${this.plugins.size} plugins`);
@@ -43,35 +52,96 @@ export class PluginLoader {
   }
 
   /**
-   * Load a single plugin from a directory
+   * Discover all plugins without initializing them.
    */
-  private async loadPlugin(pluginPath: string): Promise<void> {
-    try {
-      // Look for index.ts or index.js as the plugin entry point
-      const indexPath = join(pluginPath, 'index.js');
-      const pluginModule = await import(indexPath);
+  private async discoverPlugins(
+    pluginDirs: { name: string }[],
+    pluginsPath: string
+  ): Promise<PendingPlugin[]> {
+    const pending: PendingPlugin[] = [];
 
-      // The module should export a default Plugin instance or a factory function
-      const plugin: Plugin =
-        typeof pluginModule.default === 'function'
-          ? await pluginModule.default()
-          : pluginModule.default;
+    for (const dir of pluginDirs) {
+      const pluginPath = join(pluginsPath, dir.name);
+      try {
+        const indexPath = join(pluginPath, 'index.js');
+        const pluginModule = await import(indexPath);
 
-      if (!this.validatePlugin(plugin)) {
-        console.error(`Invalid plugin at ${pluginPath}`);
-        return;
+        const plugin: Plugin =
+          typeof pluginModule.default === 'function'
+            ? await pluginModule.default()
+            : pluginModule.default;
+
+        if (!this.validatePlugin(plugin)) {
+          console.error(`Invalid plugin at ${pluginPath}`);
+          continue;
+        }
+
+        pending.push({ path: pluginPath, plugin });
+      } catch (error) {
+        console.error(`Failed to load plugin from ${pluginPath}:`, error);
+      }
+    }
+
+    return pending;
+  }
+
+  /**
+   * Sort plugins by dependencies using topological sort.
+   * Throws if a required dependency is missing.
+   */
+  private sortByDependencies(pending: PendingPlugin[]): PendingPlugin[] {
+    const pluginMap = new Map<string, PendingPlugin>();
+    for (const p of pending) {
+      pluginMap.set(p.plugin.metadata.name, p);
+    }
+
+    const visited = new Set<string>();
+    const sorted: PendingPlugin[] = [];
+
+    const visit = (name: string, chain: string[] = []): void => {
+      if (visited.has(name)) return;
+
+      const pending = pluginMap.get(name);
+      if (!pending) {
+        throw new Error(
+          `Missing dependency: "${name}" required by "${chain[chain.length - 1] || 'unknown'}"`
+        );
       }
 
-      // Initialize the plugin
+      if (chain.includes(name)) {
+        throw new Error(`Circular dependency detected: ${[...chain, name].join(' -> ')}`);
+      }
+
+      const deps = pending.plugin.metadata.dependencies || [];
+      for (const dep of deps) {
+        visit(dep, [...chain, name]);
+      }
+
+      visited.add(name);
+      sorted.push(pending);
+    };
+
+    for (const p of pending) {
+      visit(p.plugin.metadata.name);
+    }
+
+    return sorted;
+  }
+
+  /**
+   * Initialize a plugin and register its tools and workflows.
+   */
+  private async initializePlugin(pending: PendingPlugin): Promise<void> {
+    const { plugin } = pending;
+
+    try {
       await plugin.initialize();
 
-      // Register plugin
       this.plugins.set(plugin.metadata.name, plugin);
       console.log(
         `Loaded plugin: ${plugin.metadata.name} v${plugin.metadata.version}`
       );
 
-      // Register tools
       const tools = plugin.getTools();
       for (const tool of tools) {
         if (this.tools.has(tool.definition.name)) {
@@ -87,7 +157,6 @@ export class PluginLoader {
         console.log(`  - Registered tool: ${tool.definition.name}`);
       }
 
-      // Register workflows
       const workflows = plugin.getWorkflows();
       for (const workflow of workflows) {
         if (this.workflows.has(workflow.name)) {
@@ -103,12 +172,12 @@ export class PluginLoader {
         console.log(`  - Registered workflow: ${workflow.name}`);
       }
     } catch (error) {
-      console.error(`Failed to load plugin from ${pluginPath}:`, error);
+      console.error(`Failed to initialize plugin ${plugin.metadata.name}:`, error);
     }
   }
 
   /**
-   * Validate that an object implements the Plugin interface
+   * Validate that an object implements the Plugin interface.
    */
   private validatePlugin(plugin: unknown): plugin is Plugin {
     if (!plugin || typeof plugin !== 'object') {
@@ -141,53 +210,52 @@ export class PluginLoader {
   }
 
   /**
-   * Get all loaded plugins
+   * Get all loaded plugins.
    */
   getPlugins(): Plugin[] {
     return Array.from(this.plugins.values());
   }
 
   /**
-   * Get a plugin by name
+   * Get a plugin by name.
    */
   getPlugin(name: string): Plugin | undefined {
     return this.plugins.get(name);
   }
 
   /**
-   * Get all registered tools
+   * Get all registered tools.
    */
   getTools(): Tool[] {
     return Array.from(this.tools.values()).map((entry) => entry.tool);
   }
 
   /**
-   * Get a tool by name
+   * Get a tool by name.
    */
   getTool(name: string): Tool | undefined {
     return this.tools.get(name)?.tool;
   }
 
   /**
-   * Get all registered workflows
+   * Get all registered workflows.
    */
   getWorkflows(): Workflow[] {
     return Array.from(this.workflows.values()).map((entry) => entry.workflow);
   }
 
   /**
-   * Get a workflow by name
+   * Get a workflow by name.
    */
   getWorkflow(name: string): Workflow | undefined {
     return this.workflows.get(name)?.workflow;
   }
 
   /**
-   * Set WorkflowEngine for plugins that need it (e.g., scheduler plugin)
+   * Set WorkflowEngine for plugins that need it.
    */
   setWorkflowEngine(workflowEngine: WorkflowEngine): void {
     for (const plugin of this.plugins.values()) {
-      // Check if plugin has a setWorkflowEngine method
       if ('setWorkflowEngine' in plugin && typeof plugin.setWorkflowEngine === 'function') {
         plugin.setWorkflowEngine(workflowEngine);
         console.log(`Injected WorkflowEngine into plugin: ${plugin.metadata.name}`);
@@ -196,7 +264,7 @@ export class PluginLoader {
   }
 
   /**
-   * Set Agent for plugins that need it (e.g., telegram plugin)
+   * Set Agent for plugins that need it.
    */
   setAgent(agent: Agent): void {
     for (const plugin of this.plugins.values()) {
@@ -208,7 +276,7 @@ export class PluginLoader {
   }
 
   /**
-   * Set PluginLoader reference for plugins that need it (e.g., telegram plugin)
+   * Set PluginLoader reference for plugins that need it.
    */
   setPluginLoaderReference(): void {
     for (const plugin of this.plugins.values()) {
@@ -220,7 +288,7 @@ export class PluginLoader {
   }
 
   /**
-   * Cleanup all plugins
+   * Cleanup all plugins.
    */
   async cleanup(): Promise<void> {
     for (const plugin of this.plugins.values()) {

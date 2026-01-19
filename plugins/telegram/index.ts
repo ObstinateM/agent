@@ -4,7 +4,13 @@ import { Plugin, Tool, Workflow } from '../../src/types/plugin.js';
 import type { Agent } from '../../src/core/agent.js';
 import type { WorkflowEngine } from '../../src/core/workflow-engine.js';
 import type { PluginLoader } from '../../src/core/plugin-loader.js';
+import { createTools } from './tools.js';
+import { createWorkflows } from './workflows.js';
 
+/**
+ * Telegram plugin provides a Telegram bot interface for the AI Agent.
+ * Handles user authentication and message routing.
+ */
 class TelegramPlugin implements Plugin {
   metadata = {
     name: 'telegram',
@@ -50,18 +56,30 @@ class TelegramPlugin implements Plugin {
     console.log('Telegram plugin initialized');
   }
 
+  /**
+   * Inject the Agent instance for handling chat messages.
+   */
   setAgent(agent: Agent): void {
     this.agent = agent;
   }
 
+  /**
+   * Inject the WorkflowEngine for executing workflows.
+   */
   setWorkflowEngine(engine: WorkflowEngine): void {
     this.workflowEngine = engine;
   }
 
+  /**
+   * Inject the PluginLoader for listing available tools and workflows.
+   */
   setPluginLoader(loader: PluginLoader): void {
     this.pluginLoader = loader;
   }
 
+  /**
+   * Launch the Telegram bot and start listening for messages.
+   */
   async startBot(): Promise<void> {
     if (!this.bot) {
       throw new Error('Telegram bot not initialized');
@@ -280,11 +298,11 @@ class TelegramPlugin implements Plugin {
   }
 
   getTools(): Tool[] {
-    return [];
+    return createTools();
   }
 
   getWorkflows(): Workflow[] {
-    return [];
+    return createWorkflows();
   }
 
   async cleanup(): Promise<void> {

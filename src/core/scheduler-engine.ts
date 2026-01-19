@@ -106,6 +106,9 @@ export class SchedulerEngine {
     }
   }
 
+  /**
+   * Set the workflow engine used to execute scheduled workflows.
+   */
   setWorkflowEngine(engine: WorkflowEngine): void {
     this.workflowEngine = engine;
   }
@@ -125,6 +128,9 @@ export class SchedulerEngine {
     }, this.checkIntervalMs);
   }
 
+  /**
+   * Stop the scheduler background loop.
+   */
   stop(): void {
     if (this.intervalId) {
       clearInterval(this.intervalId);
@@ -133,11 +139,17 @@ export class SchedulerEngine {
     }
   }
 
+  /**
+   * Stop the scheduler and close the database connection.
+   */
   close(): void {
     this.stop();
     this.db.close();
   }
 
+  /**
+   * Create a new scheduled task and return its ID.
+   */
   createTask(input: CreateTaskInput): string {
     const id = uuidv4();
     const createdAt = new Date().toISOString();
@@ -171,11 +183,17 @@ export class SchedulerEngine {
     return id;
   }
 
+  /**
+   * Retrieve a task by its ID.
+   */
   getTask(id: string): ScheduledTask | undefined {
     const stmt = this.db.prepare('SELECT * FROM scheduled_tasks WHERE id = ?');
     return stmt.get(id) as ScheduledTask | undefined;
   }
 
+  /**
+   * Get all scheduled tasks, optionally including disabled ones.
+   */
   getAllTasks(includeDisabled: boolean = false): ScheduledTask[] {
     const query = includeDisabled
       ? 'SELECT * FROM scheduled_tasks ORDER BY createdAt DESC'
@@ -185,6 +203,9 @@ export class SchedulerEngine {
     return stmt.all() as ScheduledTask[];
   }
 
+  /**
+   * Get tasks filtered by schedule type.
+   */
   getTasksByType(type: 'once' | 'periodic', includeDisabled: boolean = false): ScheduledTask[] {
     const query = includeDisabled
       ? 'SELECT * FROM scheduled_tasks WHERE scheduleType = ? ORDER BY createdAt DESC'
@@ -194,6 +215,9 @@ export class SchedulerEngine {
     return stmt.all(type) as ScheduledTask[];
   }
 
+  /**
+   * Get all tasks that are due for execution.
+   */
   getDueTasks(): ScheduledTask[] {
     const now = new Date().toISOString();
 
@@ -229,12 +253,18 @@ export class SchedulerEngine {
     }
   }
 
+  /**
+   * Delete a task by its ID.
+   */
   deleteTask(id: string): boolean {
     const stmt = this.db.prepare('DELETE FROM scheduled_tasks WHERE id = ?');
     const result = stmt.run(id);
     return result.changes > 0;
   }
 
+  /**
+   * Enable a paused task.
+   */
   enableTask(id: string): boolean {
     const task = this.getTask(id);
     if (!task) return false;
@@ -252,12 +282,18 @@ export class SchedulerEngine {
     return result.changes > 0;
   }
 
+  /**
+   * Disable a task without deleting it.
+   */
   disableTask(id: string): boolean {
     const stmt = this.db.prepare('UPDATE scheduled_tasks SET enabled = 0, nextExecuteAt = NULL WHERE id = ?');
     const result = stmt.run(id);
     return result.changes > 0;
   }
 
+  /**
+   * Log a task execution result.
+   */
   logExecution(execution: Omit<TaskExecution, 'id'>): string {
     const id = uuidv4();
     const stmt = this.db.prepare(`
@@ -277,6 +313,9 @@ export class SchedulerEngine {
     return id;
   }
 
+  /**
+   * Get execution history for a task.
+   */
   getExecutionHistory(taskId: string, limit: number = 10): TaskExecution[] {
     const stmt = this.db.prepare(`
       SELECT * FROM task_executions
@@ -355,6 +394,9 @@ export class SchedulerEngine {
     }
   }
 
+  /**
+   * Check if the scheduler background loop is running.
+   */
   isRunning(): boolean {
     return this.intervalId !== null;
   }

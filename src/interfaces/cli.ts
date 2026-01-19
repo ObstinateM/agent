@@ -29,6 +29,9 @@ export class CLI {
     await this.pluginLoader.cleanup();
   }
 
+  /**
+   * Start the interactive CLI session.
+   */
   async start(): Promise<void> {
     console.log('\n📦 Available Tools:');
     this.pluginLoader.getTools().forEach((tool) => {

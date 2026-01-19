@@ -43,18 +43,15 @@ Always be clear about what actions you're taking and ask for confirmation when p
     openaiModel,
   });
 
-  // Initialize scheduler engine and register its tools
   const schedulerEngine = new SchedulerEngine();
   schedulerEngine.setWorkflowEngine(workflowEngine);
   pluginLoader.registerCoreTools('scheduler', createSchedulerTools(schedulerEngine, pluginLoader));
   schedulerEngine.start();
 
-  // Inject dependencies into plugins that need them
   pluginLoader.setWorkflowEngine(workflowEngine);
   pluginLoader.setAgent(agent);
   pluginLoader.setPluginLoaderReference();
 
-  // Setup cleanup handlers
   const cleanup = async () => {
     console.log('\nShutting down...');
     schedulerEngine.close();
@@ -68,7 +65,6 @@ Always be clear about what actions you're taking and ask for confirmation when p
   const interfaceMode = process.env.INTERFACE_MODE || 'cli';
 
   if (interfaceMode === 'telegram') {
-    // Telegram interface is now handled by the telegram plugin
     const telegramPlugin = pluginLoader.getPlugin('telegram');
 
     if (!telegramPlugin) {
@@ -77,7 +73,6 @@ Always be clear about what actions you're taking and ask for confirmation when p
       process.exit(1);
     }
 
-    // Start the bot via the plugin
     if ('startBot' in telegramPlugin && typeof telegramPlugin.startBot === 'function') {
       await telegramPlugin.startBot();
     } else {

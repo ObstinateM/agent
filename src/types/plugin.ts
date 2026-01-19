@@ -48,6 +48,7 @@ export interface PluginMetadata {
   version: string;
   description: string;
   author?: string;
+  dependencies?: string[];
 }
 
 /**

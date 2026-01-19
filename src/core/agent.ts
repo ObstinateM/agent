@@ -24,7 +24,6 @@ export class Agent {
       apiKey: config.openaiApiKey,
     });
 
-    // Initialize conversation with system prompt
     if (config.systemPrompt) {
       this.conversationHistory.push({
         role: 'system',
@@ -37,13 +36,11 @@ export class Agent {
    * Process a user message and return the agent's response
    */
   async chat(userMessage: string): Promise<string> {
-    // Add user message to history
     this.conversationHistory.push({
       role: 'user',
       content: userMessage,
     });
 
-    // Get all available tools
     const tools = this._pluginLoader.getTools();
     const functions = tools.map(toolToOpenAIFunction);
 
@@ -60,7 +57,6 @@ export class Agent {
       const choice = response.choices[0];
       const message = choice.message;
 
-      // If the model wants to call a function
       if (message.function_call) {
         const functionName = message.function_call.name;
         const parsedArgs = this.parseFunctionArgs(message.function_call.arguments);
@@ -68,12 +64,10 @@ export class Agent {
         console.log(`\nExecuting tool: ${functionName}`);
         console.log(`Arguments:`, parsedArgs.ok ? parsedArgs.value : message.function_call.arguments);
 
-        // Execute the tool
         const result = parsedArgs.ok
           ? await executeTool(this._pluginLoader, functionName, parsedArgs.value)
           : { success: false, error: parsedArgs.error };
 
-        // Add assistant's function call to history
         this.conversationHistory.push({
           role: 'assistant',
           content: message.content ?? '',
@@ -83,7 +77,6 @@ export class Agent {
           },
         });
 
-        // Add function result to history
         this.conversationHistory.push({
           role: 'function',
           name: functionName,
@@ -91,7 +84,6 @@ export class Agent {
         });
         continue;
       } else {
-        // Model returned a regular response
         this.conversationHistory.push({
           role: 'assistant',
           content: message.content ?? '',

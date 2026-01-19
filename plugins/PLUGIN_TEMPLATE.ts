@@ -1,156 +1,121 @@
 /**
  * Plugin Template
  *
- * Copy this file to create a new plugin:
- * 1. Create a new folder: plugins/your-plugin/
- * 2. Copy this file to: plugins/your-plugin/index.ts
- * 3. Customize the plugin implementation below
- * 4. Build and restart the agent
+ * To create a new plugin:
+ * 1. Create folder: plugins/your-plugin/
+ * 2. Create files:
+ *    - plugins/your-plugin/index.ts    (main plugin, copy from this template)
+ *    - plugins/your-plugin/tools.ts    (tool definitions)
+ *    - plugins/your-plugin/workflows.ts (workflow definitions)
+ * 3. Build and restart the agent
+ *
+ * Plugin Structure:
+ * plugins/
+ * └── your-plugin/
+ *     ├── index.ts      # Main plugin file
+ *     ├── tools.ts      # Tool definitions
+ *     └── workflows.ts  # Workflow definitions
  */
 
-import { z } from 'zod';
 import { Plugin, Tool, Workflow } from '../../src/types/plugin.js';
+import { createTools } from './tools.js';
+import { createWorkflows } from './workflows.js';
 
 /**
  * YOUR PLUGIN NAME - Brief description
  */
 class YourPlugin implements Plugin {
-  // Plugin metadata (required)
   metadata = {
-    name: 'your-plugin',           // Unique plugin name (lowercase, hyphens)
-    version: '1.0.0',              // Semantic version
-    description: 'What your plugin does', // Brief description
-    author: 'Your Name',           // Optional
+    name: 'your-plugin',
+    version: '1.0.0',
+    description: 'What your plugin does',
+    author: 'Your Name',
+    // Optional: List plugin names this plugin depends on
+    // dependencies: ['memory', 'other-plugin'],
   };
 
   /**
-   * Initialize plugin (called once at startup)
-   * Use this to:
-   * - Validate dependencies
-   * - Load configuration
-   * - Setup connections
-   * - Validate environment
+   * Initialize plugin (called once at startup).
+   * Dependencies are guaranteed to be loaded before this is called.
    */
   async initialize(): Promise<void> {
     console.log(`${this.metadata.name} plugin initialized`);
-
-    // Example: Check if required tool is available
-    // try {
-    //   await execAsync('your-tool --version');
-    // } catch (error) {
-    //   console.warn('your-tool is not available');
-    // }
   }
 
-  /**
-   * Get all tools provided by this plugin
-   * Tools are exposed to the LLM for automatic selection
-   */
   getTools(): Tool[] {
-    return [
-      // Example Tool 1: Simple operation
-      {
-        definition: {
-          name: 'your_tool_name',    // Use lowercase with underscores
-          description: 'Clear, concise description of what this tool does. The LLM uses this to decide when to call it.',
-          parameters: z.object({
-            // Define parameters with Zod schemas
-            input: z.string().describe('What this parameter is for'),
-            count: z.number().optional().describe('Optional parameter'),
-            options: z.enum(['option1', 'option2']).optional(),
-          }),
-        },
-        execute: async (params) => {
-          // Parameters are already validated by Zod
-          const { input, count, options } = params;
-
-          // Your implementation here
-          // - Can be async (use await)
-          // - Throw errors for failures (they're caught and shown to LLM)
-          // - Return any serializable data
-
-          return {
-            success: true,
-            result: 'Your result here',
-          };
-        },
-      },
-
-      // Example Tool 2: With error handling
-      {
-        definition: {
-          name: 'another_tool',
-          description: 'Another example tool',
-          parameters: z.object({
-            id: z.string().describe('Resource ID'),
-          }),
-        },
-        execute: async (params) => {
-          const { id } = params;
-
-          // Throw descriptive errors
-          if (!id) {
-            throw new Error('ID is required');
-          }
-
-          // Example: Execute system command
-          // const { stdout } = await execAsync(`your-command ${id}`);
-          // return stdout;
-
-          return `Processed ${id}`;
-        },
-      },
-    ];
+    return createTools();
   }
 
-  /**
-   * Get all workflows provided by this plugin
-   * Workflows are predefined sequences of tool calls
-   */
   getWorkflows(): Workflow[] {
-    return [
-      {
-        name: 'your_workflow_name',
-        description: 'What this workflow accomplishes',
-        steps: [
-          {
-            toolName: 'your_tool_name',
-            params: {
-              input: 'static value',
-              count: 5,
-            },
-            description: 'What this step does',
-          },
-          {
-            toolName: 'another_tool',
-            params: {
-              // Use variables from workflow input
-              id: '${resourceId}',
-            },
-            description: 'Second step using input variable',
-          },
-          {
-            toolName: 'your_tool_name',
-            params: {
-              // Use result from previous step (0-indexed)
-              input: '${step1_result}',
-            },
-            description: 'Third step using previous result',
-          },
-        ],
-      },
-    ];
+    return createWorkflows();
   }
 
-  /**
-   * Cleanup resources (optional)
-   * Called when agent shuts down
-   */
   async cleanup(): Promise<void> {
     console.log(`${this.metadata.name} plugin cleaned up`);
-    // Close connections, cleanup resources, etc.
   }
 }
 
-// Export plugin instance as default
 export default new YourPlugin();
+
+
+// =============================================================================
+// tools.ts - Create this file in your plugin folder
+// =============================================================================
+/*
+import { z } from 'zod';
+import { Tool } from '../../src/types/plugin.js';
+
+export function createTools(): Tool[] {
+  return [
+    {
+      definition: {
+        name: 'your_tool_name',
+        description: 'Clear description for the LLM',
+        parameters: z.object({
+          input: z.string().describe('What this parameter is for'),
+          count: z.number().optional().describe('Optional parameter'),
+        }),
+      },
+      execute: async (params) => {
+        const { input, count } = params;
+        // Your implementation here
+        return { success: true, result: 'Your result' };
+      },
+    },
+  ];
+}
+*/
+
+
+// =============================================================================
+// workflows.ts - Create this file in your plugin folder
+// =============================================================================
+/*
+import { Workflow } from '../../src/types/plugin.js';
+
+export function createWorkflows(): Workflow[] {
+  return [
+    {
+      name: 'your_workflow_name',
+      description: 'What this workflow accomplishes',
+      steps: [
+        {
+          toolName: 'your_tool_name',
+          params: { input: 'static value' },
+          description: 'What this step does',
+        },
+        {
+          toolName: 'another_tool',
+          params: { id: '${resourceId}' }, // Use workflow input variable
+          description: 'Second step',
+        },
+        {
+          toolName: 'your_tool_name',
+          params: { input: '${step1_result}' }, // Use previous step result
+          description: 'Third step',
+        },
+      ],
+    },
+  ];
+}
+*/

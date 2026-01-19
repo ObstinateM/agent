@@ -1,6 +1,10 @@
 import type { ToolExecutionResult } from '../types/agent.js';
 import type { PluginLoader } from './plugin-loader.js';
 
+/**
+ * Execute a tool by name with the given parameters.
+ * Validates parameters using the tool's Zod schema before execution.
+ */
 export async function executeTool(
   pluginLoader: PluginLoader,
   toolName: string,

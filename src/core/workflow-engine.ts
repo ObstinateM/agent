@@ -199,10 +199,7 @@ Rules:
         `\nStep ${i + 1}/${workflow.steps.length}: ${step.description || step.toolName}`
       );
 
-      // Resolve parameters with context variables
       const resolvedParams = this.resolveParams(step.params, context);
-
-      // Execute the tool
       const result = await executeTool(this._pluginLoader, step.toolName, resolvedParams);
 
       results.push({
@@ -220,7 +217,6 @@ Rules:
         };
       }
 
-      // Store result in context for subsequent steps
       context[`step${i}_result`] = result.result;
       console.log(`Step ${i + 1} completed successfully`);
     }
