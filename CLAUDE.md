@@ -66,8 +66,11 @@ This is a modular TypeScript AI Agent system that connects to OpenAI's GPT model
 # Install dependencies
 npm install
 
-# Run in development mode with hot reload
+# Run in development mode
 npm run dev
+
+# Run in development mode with hot reload
+npm run dev:watch
 
 # Build the project
 npm run build
@@ -151,7 +154,14 @@ docker run --env-file .env ai-agent
    - Supports parameter passing between steps using `${variableName}` syntax
    - Stores step results in context as `step0_result`, `step1_result`, etc.
 
-4. **Interfaces** (`src/interfaces/`)
+4. **Scheduler Engine** (`src/core/scheduler-engine.ts`)
+   - Core component for scheduling workflow executions
+   - Stores scheduled tasks in SQLite database (`data/scheduler.db`)
+   - Background execution loop checks for due tasks every 60 seconds
+   - Tools are registered via `PluginLoader.registerCoreTools()`
+   - Properly handles timing: periodic tasks don't run immediately on creation
+
+5. **Interfaces** (`src/interfaces/`)
    - **CLI** (`cli.ts`): Interactive command-line interface with prompt
    - **Telegram Bot** (`telegram-bot.ts`): Telegram bot interface for remote access
    - Configurable via `INTERFACE_MODE` environment variable
@@ -388,8 +398,9 @@ Executes shell scripts and commands:
 Workflows:
 - `system_health_check`: Comprehensive system check
 
-### Scheduler Plugin (`plugins/scheduler/`)
-Schedule workflows to run at specific times or periodically:
+### Scheduler Engine (Core Component)
+
+The scheduler is a core engine (`src/core/scheduler-engine.ts`), not a plugin. It provides tools to schedule workflows:
 - `schedule_task_once`: Schedule a workflow to run once at a specific datetime
 - `schedule_task_periodic`: Schedule a workflow to run periodically (every X minutes)
 - `list_scheduled_tasks`: List all scheduled tasks with their status
@@ -403,13 +414,13 @@ Schedule workflows to run at specific times or periodically:
 - Automatic background execution every minute
 - Execution history tracking with success/failure status
 - One-time tasks are automatically disabled after execution
-- Periodic tasks track last execution time
+- Periodic tasks use `nextExecuteAt` to track when to run next (first execution is after the interval, not immediately)
 
 **Usage Examples:**
 ```
 > Schedule a container restart every 6 hours
 Agent: [Uses schedule_task_periodic]
-       Task "Container Restart" scheduled to run every 360 minutes
+       Task "Container Restart" scheduled. First execution in 6 hours.
 
 > Schedule a backup tomorrow at 2am
 Agent: [Uses schedule_task_once with executeAt="2026-01-19T02:00:00Z"]
@@ -418,12 +429,13 @@ Agent: [Uses schedule_task_once with executeAt="2026-01-19T02:00:00Z"]
 > What tasks are scheduled?
 Agent: [Uses list_scheduled_tasks]
        Found 2 scheduled tasks:
-       1. Container Restart (periodic, every 6 hours)
+       1. Container Restart (periodic, every 6 hours, next run in 6 hours)
        2. Backup (once, in 8 hours)
 ```
 
 **Implementation Notes:**
-- Requires WorkflowEngine injection via `setWorkflowEngine()` method
+- Initialized in `src/index.ts` with WorkflowEngine dependency
+- Tools registered via `pluginLoader.registerCoreTools('scheduler', ...)`
 - Uses `better-sqlite3` for database operations
 - Background scheduler checks for due tasks every 60 seconds
 - Tasks are executed in background, preventing overlap
@@ -559,7 +571,10 @@ src/
 ├── core/
 │   ├── agent.ts              # Main agent with OpenAI integration
 │   ├── plugin-loader.ts      # Plugin auto-discovery and loading
-│   └── workflow-engine.ts    # Workflow execution engine
+│   ├── workflow-engine.ts    # Workflow execution engine
+│   ├── scheduler-engine.ts   # Scheduled task execution engine
+│   ├── scheduler-tools.ts    # Scheduler tool definitions
+│   └── tool-executor.ts      # Tool execution utility
 ├── interfaces/
 │   ├── cli.ts                # Command-line interface
 │   └── telegram-bot.ts       # Telegram bot interface
@@ -569,11 +584,14 @@ src/
 ├── utils/                    # Utility functions
 └── index.ts                  # Main entry point (CLI or Telegram)
 
-plugins/
-├── docker/                   # Docker management plugin
+plugins/                      # User plugins directory
+├── docker/                   # Docker management plugin (example)
 │   └── index.ts
-└── script-runner/            # Shell script execution plugin
+└── your-plugin/              # Add your plugins here
     └── index.ts
+
+data/
+└── scheduler.db              # SQLite database for scheduled tasks
 
 Dockerfile                    # Docker container configuration
 docker-compose.yml            # Docker Compose orchestration

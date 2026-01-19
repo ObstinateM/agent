@@ -1,23 +1,22 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { SchedulerDatabase } from '../database.js';
-import { unlinkSync, mkdtempSync, mkdirSync, existsSync } from 'fs';
+import { SchedulerEngine } from '../scheduler-engine.js';
+import { unlinkSync, mkdtempSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 
-describe('SchedulerDatabase', () => {
-  let db: SchedulerDatabase;
+describe('SchedulerEngine', () => {
+  let engine: SchedulerEngine;
   let testDbPath: string;
   let tempDir: string;
 
   beforeEach(() => {
-    // Create a temporary directory for each test
     tempDir = mkdtempSync(join(tmpdir(), 'scheduler-test-'));
     testDbPath = join(tempDir, 'test.db');
-    db = new SchedulerDatabase(testDbPath);
+    engine = new SchedulerEngine(testDbPath);
   });
 
   afterEach(() => {
-    db.close();
+    engine.close();
     try {
       unlinkSync(testDbPath);
     } catch {
@@ -26,22 +25,26 @@ describe('SchedulerDatabase', () => {
   });
 
   describe('createTask', () => {
-    it('should create a one-time task', () => {
-      const taskId = db.createTask({
+    it('should create a one-time task with nextExecuteAt set', () => {
+      const futureDate = new Date(Date.now() + 60000).toISOString();
+      const taskId = engine.createTask({
         name: 'Test Task',
         workflowName: 'test_workflow',
         parameters: JSON.stringify({ param: 'value' }),
         scheduleType: 'once',
-        executeAt: new Date('2025-12-31T23:59:59Z').toISOString(),
+        executeAt: futureDate,
         intervalMinutes: null,
       });
 
       expect(taskId).toBeTruthy();
-      expect(typeof taskId).toBe('string');
+      const task = engine.getTask(taskId);
+      expect(task).toBeDefined();
+      expect(task?.nextExecuteAt).toBe(futureDate);
     });
 
-    it('should create a periodic task', () => {
-      const taskId = db.createTask({
+    it('should create a periodic task with nextExecuteAt in the future', () => {
+      const now = Date.now();
+      const taskId = engine.createTask({
         name: 'Periodic Task',
         workflowName: 'test_workflow',
         parameters: JSON.stringify({}),
@@ -51,46 +54,64 @@ describe('SchedulerDatabase', () => {
       });
 
       expect(taskId).toBeTruthy();
-      const task = db.getTask(taskId);
+      const task = engine.getTask(taskId);
       expect(task?.intervalMinutes).toBe(60);
+
+      const nextExecuteAt = new Date(task!.nextExecuteAt!).getTime();
+      expect(nextExecuteAt).toBeGreaterThanOrEqual(now + 59 * 60 * 1000);
+      expect(nextExecuteAt).toBeLessThanOrEqual(now + 61 * 60 * 1000);
+    });
+
+    it('should NOT make periodic task immediately due (bug fix)', () => {
+      engine.createTask({
+        name: 'Periodic Task',
+        workflowName: 'test_workflow',
+        parameters: JSON.stringify({}),
+        scheduleType: 'periodic',
+        executeAt: null,
+        intervalMinutes: 60,
+      });
+
+      const dueTasks = engine.getDueTasks();
+      expect(dueTasks.length).toBe(0);
     });
   });
 
   describe('getTask', () => {
     it('should retrieve a task by ID', () => {
-      const taskId = db.createTask({
+      const taskId = engine.createTask({
         name: 'Test Task',
         workflowName: 'test_workflow',
         parameters: JSON.stringify({}),
         scheduleType: 'once',
-        executeAt: new Date().toISOString(),
+        executeAt: new Date(Date.now() + 60000).toISOString(),
         intervalMinutes: null,
       });
 
-      const task = db.getTask(taskId);
+      const task = engine.getTask(taskId);
       expect(task).toBeDefined();
       expect(task?.id).toBe(taskId);
       expect(task?.name).toBe('Test Task');
     });
 
     it('should return undefined for non-existent task', () => {
-      const task = db.getTask('non-existent-id');
+      const task = engine.getTask('non-existent-id');
       expect(task).toBeUndefined();
     });
   });
 
   describe('getAllTasks', () => {
     it('should return all enabled tasks', () => {
-      db.createTask({
+      engine.createTask({
         name: 'Task 1',
         workflowName: 'workflow1',
         parameters: JSON.stringify({}),
         scheduleType: 'once',
-        executeAt: new Date().toISOString(),
+        executeAt: new Date(Date.now() + 60000).toISOString(),
         intervalMinutes: null,
       });
 
-      db.createTask({
+      engine.createTask({
         name: 'Task 2',
         workflowName: 'workflow2',
         parameters: JSON.stringify({}),
@@ -99,24 +120,24 @@ describe('SchedulerDatabase', () => {
         intervalMinutes: 60,
       });
 
-      const tasks = db.getAllTasks(false);
+      const tasks = engine.getAllTasks(false);
       expect(tasks.length).toBe(2);
     });
 
     it('should include disabled tasks when requested', () => {
-      const taskId = db.createTask({
+      const taskId = engine.createTask({
         name: 'Task to disable',
         workflowName: 'workflow1',
         parameters: JSON.stringify({}),
         scheduleType: 'once',
-        executeAt: new Date().toISOString(),
+        executeAt: new Date(Date.now() + 60000).toISOString(),
         intervalMinutes: null,
       });
 
-      db.disableTask(taskId);
+      engine.disableTask(taskId);
 
-      const enabledTasks = db.getAllTasks(false);
-      const allTasks = db.getAllTasks(true);
+      const enabledTasks = engine.getAllTasks(false);
+      const allTasks = engine.getAllTasks(true);
 
       expect(enabledTasks.length).toBe(0);
       expect(allTasks.length).toBe(1);
@@ -125,33 +146,31 @@ describe('SchedulerDatabase', () => {
 
   describe('getDueTasks', () => {
     it('should return one-time tasks that are due', () => {
-      // Create a task that's due now
-      db.createTask({
+      engine.createTask({
         name: 'Due Task',
         workflowName: 'workflow1',
         parameters: JSON.stringify({}),
         scheduleType: 'once',
-        executeAt: new Date(Date.now() - 1000).toISOString(), // 1 second ago
+        executeAt: new Date(Date.now() - 1000).toISOString(),
         intervalMinutes: null,
       });
 
-      // Create a task that's not due yet
-      db.createTask({
+      engine.createTask({
         name: 'Future Task',
         workflowName: 'workflow2',
         parameters: JSON.stringify({}),
         scheduleType: 'once',
-        executeAt: new Date(Date.now() + 1000000).toISOString(), // Future
+        executeAt: new Date(Date.now() + 1000000).toISOString(),
         intervalMinutes: null,
       });
 
-      const dueTasks = db.getDueTasks();
+      const dueTasks = engine.getDueTasks();
       expect(dueTasks.length).toBe(1);
       expect(dueTasks[0].name).toBe('Due Task');
     });
 
-    it('should return periodic tasks that need to run', () => {
-      db.createTask({
+    it('should NOT return newly created periodic tasks as due', () => {
+      engine.createTask({
         name: 'Periodic Task',
         workflowName: 'workflow1',
         parameters: JSON.stringify({}),
@@ -160,14 +179,38 @@ describe('SchedulerDatabase', () => {
         intervalMinutes: 60,
       });
 
-      const dueTasks = db.getDueTasks();
-      expect(dueTasks.length).toBeGreaterThan(0);
+      const dueTasks = engine.getDueTasks();
+      expect(dueTasks.length).toBe(0);
     });
   });
 
-  describe('updateTaskExecution', () => {
-    it('should update lastExecutedAt and executionCount', () => {
-      const taskId = db.createTask({
+  describe('deleteTask', () => {
+    it('should delete a task', () => {
+      const taskId = engine.createTask({
+        name: 'Task to delete',
+        workflowName: 'workflow1',
+        parameters: JSON.stringify({}),
+        scheduleType: 'once',
+        executeAt: new Date(Date.now() + 60000).toISOString(),
+        intervalMinutes: null,
+      });
+
+      const deleted = engine.deleteTask(taskId);
+      expect(deleted).toBe(true);
+
+      const task = engine.getTask(taskId);
+      expect(task).toBeUndefined();
+    });
+
+    it('should return false for non-existent task', () => {
+      const deleted = engine.deleteTask('non-existent-id');
+      expect(deleted).toBe(false);
+    });
+  });
+
+  describe('enableTask and disableTask', () => {
+    it('should disable a task and clear nextExecuteAt', () => {
+      const taskId = engine.createTask({
         name: 'Test Task',
         workflowName: 'workflow1',
         parameters: JSON.stringify({}),
@@ -176,91 +219,46 @@ describe('SchedulerDatabase', () => {
         intervalMinutes: 60,
       });
 
-      const taskBefore = db.getTask(taskId)!;
-      expect(taskBefore.executionCount).toBe(0);
-      expect(taskBefore.lastExecutedAt).toBeNull();
-
-      db.updateTaskExecution(taskId);
-
-      const taskAfter = db.getTask(taskId)!;
-      expect(taskAfter.executionCount).toBe(1);
-      expect(taskAfter.lastExecutedAt).toBeTruthy();
-    });
-  });
-
-  describe('deleteTask', () => {
-    it('should delete a task', () => {
-      const taskId = db.createTask({
-        name: 'Task to delete',
-        workflowName: 'workflow1',
-        parameters: JSON.stringify({}),
-        scheduleType: 'once',
-        executeAt: new Date().toISOString(),
-        intervalMinutes: null,
-      });
-
-      const deleted = db.deleteTask(taskId);
-      expect(deleted).toBe(true);
-
-      const task = db.getTask(taskId);
-      expect(task).toBeUndefined();
-    });
-
-    it('should return false for non-existent task', () => {
-      const deleted = db.deleteTask('non-existent-id');
-      expect(deleted).toBe(false);
-    });
-  });
-
-  describe('enableTask and disableTask', () => {
-    it('should disable a task', () => {
-      const taskId = db.createTask({
-        name: 'Test Task',
-        workflowName: 'workflow1',
-        parameters: JSON.stringify({}),
-        scheduleType: 'once',
-        executeAt: new Date().toISOString(),
-        intervalMinutes: null,
-      });
-
-      const disabled = db.disableTask(taskId);
+      const disabled = engine.disableTask(taskId);
       expect(disabled).toBe(true);
 
-      const task = db.getTask(taskId)!;
+      const task = engine.getTask(taskId)!;
       expect(task.enabled).toBe(0);
+      expect(task.nextExecuteAt).toBeNull();
     });
 
-    it('should enable a task', () => {
-      const taskId = db.createTask({
+    it('should enable a task and set nextExecuteAt', () => {
+      const taskId = engine.createTask({
         name: 'Test Task',
         workflowName: 'workflow1',
         parameters: JSON.stringify({}),
-        scheduleType: 'once',
-        executeAt: new Date().toISOString(),
-        intervalMinutes: null,
+        scheduleType: 'periodic',
+        executeAt: null,
+        intervalMinutes: 60,
       });
 
-      db.disableTask(taskId);
-      const enabled = db.enableTask(taskId);
+      engine.disableTask(taskId);
+      const enabled = engine.enableTask(taskId);
       expect(enabled).toBe(true);
 
-      const task = db.getTask(taskId)!;
+      const task = engine.getTask(taskId)!;
       expect(task.enabled).toBe(1);
+      expect(task.nextExecuteAt).toBeTruthy();
     });
   });
 
   describe('logExecution', () => {
     it('should log a successful execution', () => {
-      const taskId = db.createTask({
+      const taskId = engine.createTask({
         name: 'Test Task',
         workflowName: 'workflow1',
         parameters: JSON.stringify({}),
         scheduleType: 'once',
-        executeAt: new Date().toISOString(),
+        executeAt: new Date(Date.now() + 60000).toISOString(),
         intervalMinutes: null,
       });
 
-      const executionId = db.logExecution({
+      const executionId = engine.logExecution({
         taskId,
         executedAt: new Date().toISOString(),
         success: 1,
@@ -272,16 +270,16 @@ describe('SchedulerDatabase', () => {
     });
 
     it('should log a failed execution', () => {
-      const taskId = db.createTask({
+      const taskId = engine.createTask({
         name: 'Test Task',
         workflowName: 'workflow1',
         parameters: JSON.stringify({}),
         scheduleType: 'once',
-        executeAt: new Date().toISOString(),
+        executeAt: new Date(Date.now() + 60000).toISOString(),
         intervalMinutes: null,
       });
 
-      const executionId = db.logExecution({
+      const executionId = engine.logExecution({
         taskId,
         executedAt: new Date().toISOString(),
         success: 0,
@@ -295,7 +293,7 @@ describe('SchedulerDatabase', () => {
 
   describe('getExecutionHistory', () => {
     it('should return execution history', () => {
-      const taskId = db.createTask({
+      const taskId = engine.createTask({
         name: 'Test Task',
         workflowName: 'workflow1',
         parameters: JSON.stringify({}),
@@ -304,7 +302,7 @@ describe('SchedulerDatabase', () => {
         intervalMinutes: 60,
       });
 
-      db.logExecution({
+      engine.logExecution({
         taskId,
         executedAt: new Date().toISOString(),
         success: 1,
@@ -312,7 +310,7 @@ describe('SchedulerDatabase', () => {
         result: null,
       });
 
-      db.logExecution({
+      engine.logExecution({
         taskId,
         executedAt: new Date().toISOString(),
         success: 0,
@@ -320,12 +318,12 @@ describe('SchedulerDatabase', () => {
         result: null,
       });
 
-      const history = db.getExecutionHistory(taskId, 10);
+      const history = engine.getExecutionHistory(taskId, 10);
       expect(history.length).toBe(2);
     });
 
     it('should respect limit parameter', () => {
-      const taskId = db.createTask({
+      const taskId = engine.createTask({
         name: 'Test Task',
         workflowName: 'workflow1',
         parameters: JSON.stringify({}),
@@ -335,7 +333,7 @@ describe('SchedulerDatabase', () => {
       });
 
       for (let i = 0; i < 5; i++) {
-        db.logExecution({
+        engine.logExecution({
           taskId,
           executedAt: new Date().toISOString(),
           success: 1,
@@ -344,8 +342,18 @@ describe('SchedulerDatabase', () => {
         });
       }
 
-      const history = db.getExecutionHistory(taskId, 3);
+      const history = engine.getExecutionHistory(taskId, 3);
       expect(history.length).toBe(3);
+    });
+  });
+
+  describe('scheduler lifecycle', () => {
+    it('should start and stop without errors', () => {
+      expect(engine.isRunning()).toBe(false);
+      engine.start();
+      expect(engine.isRunning()).toBe(true);
+      engine.stop();
+      expect(engine.isRunning()).toBe(false);
     });
   });
 });

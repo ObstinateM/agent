@@ -2,13 +2,15 @@ import { readdir } from 'fs/promises';
 import { join, resolve } from 'path';
 import { Plugin, Tool, Workflow } from '../types/plugin.js';
 import type { WorkflowEngine } from './workflow-engine.js';
+import type { Agent } from './agent.js';
 
 /**
- * PluginLoader handles auto-discovery and loading of plugins
+ * PluginLoader handles auto-discovery and loading of plugins.
+ * Also supports registering core tools that aren't part of plugins.
  */
 export class PluginLoader {
   private plugins: Map<string, Plugin> = new Map();
-  private tools: Map<string, { plugin: string; tool: Tool }> = new Map();
+  private tools: Map<string, { source: string; tool: Tool }> = new Map();
   private workflows: Map<string, { plugin: string; workflow: Workflow }> = new Map();
 
   constructor(private _pluginsDir: string) {}
@@ -79,7 +81,7 @@ export class PluginLoader {
           continue;
         }
         this.tools.set(tool.definition.name, {
-          plugin: plugin.metadata.name,
+          source: plugin.metadata.name,
           tool,
         });
         console.log(`  - Registered tool: ${tool.definition.name}`);
@@ -108,17 +110,34 @@ export class PluginLoader {
   /**
    * Validate that an object implements the Plugin interface
    */
-  private validatePlugin(plugin: any): plugin is Plugin {
+  private validatePlugin(plugin: unknown): plugin is Plugin {
+    if (!plugin || typeof plugin !== 'object') {
+      return false;
+    }
+
+    const candidate = plugin as Partial<Plugin>;
     return (
-      plugin &&
-      typeof plugin === 'object' &&
-      plugin.metadata &&
-      typeof plugin.metadata.name === 'string' &&
-      typeof plugin.metadata.version === 'string' &&
-      typeof plugin.initialize === 'function' &&
-      typeof plugin.getTools === 'function' &&
-      typeof plugin.getWorkflows === 'function'
+      !!candidate.metadata &&
+      typeof candidate.metadata.name === 'string' &&
+      typeof candidate.metadata.version === 'string' &&
+      typeof candidate.initialize === 'function' &&
+      typeof candidate.getTools === 'function' &&
+      typeof candidate.getWorkflows === 'function'
     );
+  }
+
+  /**
+   * Register tools from a core component (not a plugin).
+   */
+  registerCoreTools(source: string, tools: Tool[]): void {
+    for (const tool of tools) {
+      if (this.tools.has(tool.definition.name)) {
+        console.warn(`Tool ${tool.definition.name} already registered, skipping`);
+        continue;
+      }
+      this.tools.set(tool.definition.name, { source, tool });
+      console.log(`Registered core tool: ${tool.definition.name} (from ${source})`);
+    }
   }
 
   /**
@@ -179,7 +198,7 @@ export class PluginLoader {
   /**
    * Set Agent for plugins that need it (e.g., telegram plugin)
    */
-  setAgent(agent: any): void {
+  setAgent(agent: Agent): void {
     for (const plugin of this.plugins.values()) {
       if ('setAgent' in plugin && typeof plugin.setAgent === 'function') {
         plugin.setAgent(agent);

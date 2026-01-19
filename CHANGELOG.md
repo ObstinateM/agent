@@ -1,5 +1,14 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+- Use non-watch dev script for the CLI to prevent reloads on keystrokes.
+- Scheduler plugin now creates its SQLite data directory when missing.
+
+### Added
+- `npm run dev:watch` script for hot reload during development.
+
 ## [1.3.0] - 2026-01-18
 
 ### Changed - Telegram as Plugin

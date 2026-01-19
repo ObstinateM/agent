@@ -19,25 +19,25 @@ class Logger {
     this.level = level;
   }
 
-  debug(message: string, ...args: any[]): void {
+  debug(message: string, ...args: unknown[]): void {
     if (this.level <= LogLevel.DEBUG) {
       console.log(`[DEBUG] ${message}`, ...args);
     }
   }
 
-  info(message: string, ...args: any[]): void {
+  info(message: string, ...args: unknown[]): void {
     if (this.level <= LogLevel.INFO) {
       console.log(`[INFO] ${message}`, ...args);
     }
   }
 
-  warn(message: string, ...args: any[]): void {
+  warn(message: string, ...args: unknown[]): void {
     if (this.level <= LogLevel.WARN) {
       console.warn(`[WARN] ${message}`, ...args);
     }
   }
 
-  error(message: string, ...args: any[]): void {
+  error(message: string, ...args: unknown[]): void {
     if (this.level <= LogLevel.ERROR) {
       console.error(`[ERROR] ${message}`, ...args);
     }

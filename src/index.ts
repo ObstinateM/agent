@@ -1,6 +1,9 @@
+import 'dotenv/config';
 import { Agent } from './core/agent.js';
 import { PluginLoader } from './core/plugin-loader.js';
 import { WorkflowEngine } from './core/workflow-engine.js';
+import { SchedulerEngine } from './core/scheduler-engine.js';
+import { createSchedulerTools } from './core/scheduler-tools.js';
 import { CLI } from './interfaces/cli.js';
 
 /**
@@ -35,12 +38,32 @@ Always be clear about what actions you're taking and ask for confirmation when p
   await pluginLoader.loadPlugins();
 
   const agent = new Agent(agentConfig, pluginLoader);
-  const workflowEngine = new WorkflowEngine(pluginLoader);
+  const workflowEngine = new WorkflowEngine(pluginLoader, {
+    openaiApiKey,
+    openaiModel,
+  });
+
+  // Initialize scheduler engine and register its tools
+  const schedulerEngine = new SchedulerEngine();
+  schedulerEngine.setWorkflowEngine(workflowEngine);
+  pluginLoader.registerCoreTools('scheduler', createSchedulerTools(schedulerEngine, pluginLoader));
+  schedulerEngine.start();
 
   // Inject dependencies into plugins that need them
   pluginLoader.setWorkflowEngine(workflowEngine);
   pluginLoader.setAgent(agent);
   pluginLoader.setPluginLoaderReference();
+
+  // Setup cleanup handlers
+  const cleanup = async () => {
+    console.log('\nShutting down...');
+    schedulerEngine.close();
+    await pluginLoader.cleanup();
+    process.exit(0);
+  };
+
+  process.on('SIGINT', cleanup);
+  process.on('SIGTERM', cleanup);
 
   const interfaceMode = process.env.INTERFACE_MODE || 'cli';
 

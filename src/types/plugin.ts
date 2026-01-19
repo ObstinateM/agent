@@ -3,7 +3,7 @@ import { z } from 'zod';
 /**
  * Tool parameter definition using Zod for runtime validation
  */
-export type ToolParameter = z.ZodType<any>;
+export type ToolParameter = z.ZodTypeAny;
 
 /**
  * Tool definition that will be exposed to the LLM
@@ -11,7 +11,7 @@ export type ToolParameter = z.ZodType<any>;
 export interface ToolDefinition {
   name: string;
   description: string;
-  parameters: z.ZodObject<any>;
+  parameters: z.ZodObject<z.ZodRawShape>;
 }
 
 /**
@@ -19,7 +19,7 @@ export interface ToolDefinition {
  */
 export interface Tool {
   definition: ToolDefinition;
-  execute: (_params: any) => Promise<any>;
+  execute: (_params: unknown) => Promise<unknown>;
 }
 
 /**
@@ -27,7 +27,7 @@ export interface Tool {
  */
 export interface WorkflowStep {
   toolName: string;
-  params: Record<string, any>;
+  params: Record<string, unknown>;
   description?: string;
 }
 
@@ -85,7 +85,7 @@ export interface OpenAIFunction {
   description: string;
   parameters: {
     type: 'object';
-    properties: Record<string, any>;
+    properties: Record<string, unknown>;
     required: string[];
   };
 }
@@ -95,13 +95,13 @@ export interface OpenAIFunction {
  */
 export function toolToOpenAIFunction(tool: Tool): OpenAIFunction {
   const zodSchema = tool.definition.parameters;
-  const shape = zodSchema._def.shape();
+  const shape = zodSchema.shape;
 
-  const properties: Record<string, any> = {};
+  const properties: Record<string, unknown> = {};
   const required: string[] = [];
 
   for (const [key, value] of Object.entries(shape)) {
-    const zodType = value as z.ZodType<any>;
+    const zodType = value as z.ZodTypeAny;
     properties[key] = zodToJsonSchema(zodType);
 
     if (!zodType.isOptional()) {
@@ -123,8 +123,14 @@ export function toolToOpenAIFunction(tool: Tool): OpenAIFunction {
 /**
  * Simple Zod to JSON Schema converter
  */
-function zodToJsonSchema(zodType: z.ZodType<any>): any {
-  const def = zodType._def as any;
+function zodToJsonSchema(zodType: z.ZodTypeAny): Record<string, unknown> {
+  const def = zodType._def as {
+    typeName: string;
+    shape?: () => z.ZodRawShape;
+    type?: z.ZodTypeAny;
+    values?: string[];
+    innerType?: z.ZodTypeAny;
+  };
   const typeName = def.typeName;
 
   switch (typeName) {
@@ -137,20 +143,20 @@ function zodToJsonSchema(zodType: z.ZodType<any>): any {
     case 'ZodArray':
       return {
         type: 'array',
-        items: zodToJsonSchema(def.type),
+        items: def.type ? zodToJsonSchema(def.type) : {},
         description: zodType.description,
       };
     case 'ZodObject':
-      const shape = def.shape();
-      const properties: Record<string, any> = {};
+      const shape = def.shape ? def.shape() : {};
+      const properties: Record<string, unknown> = {};
       for (const [key, value] of Object.entries(shape)) {
-        properties[key] = zodToJsonSchema(value as z.ZodType<any>);
+        properties[key] = zodToJsonSchema(value as z.ZodTypeAny);
       }
       return { type: 'object', properties, description: zodType.description };
     case 'ZodEnum':
       return { type: 'string', enum: def.values, description: zodType.description };
     case 'ZodOptional':
-      return zodToJsonSchema(def.innerType);
+      return def.innerType ? zodToJsonSchema(def.innerType) : { type: 'string' };
     default:
       return { type: 'string' };
   }

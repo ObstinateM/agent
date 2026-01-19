@@ -1,4 +1,4 @@
-import { createInterface } from 'readline';
+import prompts from 'prompts';
 import { Agent } from '../core/agent.js';
 import { WorkflowEngine } from '../core/workflow-engine.js';
 import { PluginLoader } from '../core/plugin-loader.js';
@@ -22,6 +22,13 @@ export class CLI {
     this.pluginLoader = pluginLoader;
   }
 
+  private async shutdown(message?: string): Promise<void> {
+    if (message) {
+      console.log(message);
+    }
+    await this.pluginLoader.cleanup();
+  }
+
   async start(): Promise<void> {
     console.log('\n📦 Available Tools:');
     this.pluginLoader.getTools().forEach((tool) => {
@@ -40,57 +47,72 @@ export class CLI {
     console.log('  - /clear - Clear conversation history');
     console.log('  - /exit - Exit the agent\n');
 
-    const rl = createInterface({
-      input: process.stdin,
-      output: process.stdout,
-      prompt: '> ',
+    process.on('SIGINT', async () => {
+      console.log('\n\nShutting down...');
+      await this.shutdown();
+      process.exit(0);
     });
 
-    rl.prompt();
+    while (true) {
+      let rawInput = '';
+      let cancelled = false;
+      const response = await prompts(
+        {
+          type: 'text',
+          name: 'command',
+          message: '>',
+        },
+        {
+          onCancel: () => {
+            cancelled = true;
+            return false;
+          },
+        }
+      );
+      rawInput = typeof response.command === 'string' ? response.command : '';
 
-    rl.on('line', async (line) => {
-      const input = line.trim();
-
-      if (!input) {
-        rl.prompt();
+      if (cancelled) {
+        await this.shutdown('\nGoodbye!');
         return;
       }
 
-      if (input === '/exit') {
-        console.log('Goodbye!');
-        await this.pluginLoader.cleanup();
-        process.exit(0);
+      const command = rawInput.trim();
+
+      if (!command) {
+        continue;
       }
 
-      if (input === '/clear') {
+      if (command === '/exit') {
+        await this.shutdown('\nGoodbye!');
+        return;
+      }
+
+      if (command === '/clear') {
         this.agent.clearHistory();
         console.log('Conversation history cleared');
-        rl.prompt();
-        return;
+        continue;
       }
 
-      if (input === '/tools') {
+      if (command === '/tools') {
         console.log('\n📦 Available Tools:');
         this.pluginLoader.getTools().forEach((tool) => {
           console.log(`  - ${tool.definition.name}: ${tool.definition.description}`);
         });
         console.log();
-        rl.prompt();
-        return;
+        continue;
       }
 
-      if (input === '/workflows') {
+      if (command === '/workflows') {
         console.log('\n🔄 Available Workflows:');
         this.pluginLoader.getWorkflows().forEach((workflow) => {
           console.log(`  - ${workflow.name}: ${workflow.description}`);
         });
         console.log();
-        rl.prompt();
-        return;
+        continue;
       }
 
-      if (input.startsWith('/workflow ')) {
-        const parts = input.slice(10).split(' ');
+      if (command.startsWith('/workflow ')) {
+        const parts = command.slice(10).split(' ');
         const workflowName = parts[0];
 
         let params = {};
@@ -99,8 +121,7 @@ export class CLI {
             params = JSON.parse(parts.slice(1).join(' '));
           } catch {
             console.error('Invalid JSON parameters');
-            rl.prompt();
-            return;
+            continue;
           }
         }
 
@@ -115,25 +136,16 @@ export class CLI {
           console.error('\n❌ Error executing workflow:', error);
         }
         console.log();
-        rl.prompt();
-        return;
+        continue;
       }
 
       try {
-        const response = await this.agent.chat(input);
+        const response = await this.agent.chat(command);
         console.log(`\n🤖 ${response}\n`);
       } catch (error) {
         console.error('\n❌ Error:', error);
         console.log();
       }
-
-      rl.prompt();
-    });
-
-    process.on('SIGINT', async () => {
-      console.log('\n\nShutting down...');
-      await this.pluginLoader.cleanup();
-      process.exit(0);
-    });
+    }
   }
 }

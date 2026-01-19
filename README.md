@@ -35,8 +35,11 @@ cp .env.example .env
 
 **Option 1: Local Development**
 ```bash
-# Development mode (with hot reload)
+# Development mode
 npm run dev
+
+# Development mode (with hot reload)
+npm run dev:watch
 
 # Build and run
 npm run build

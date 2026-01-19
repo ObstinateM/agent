@@ -32,7 +32,7 @@ export interface AgentConfig {
  */
 export interface ToolExecutionResult {
   success: boolean;
-  result?: any;
+  result?: unknown;
   error?: string;
 }
 
@@ -42,7 +42,7 @@ export interface ToolExecutionResult {
 export interface WorkflowContext {
   workflowName: string;
   stepIndex: number;
-  variables: Record<string, any>;
+  variables: Record<string, unknown>;
 }
 
 /**
@@ -55,5 +55,26 @@ export interface WorkflowExecutionResult {
     toolName: string;
     result: ToolExecutionResult;
   }[];
+  error?: string;
+}
+
+/**
+ * Timing intent for workflow execution
+ */
+export type TimingIntent =
+  | { type: 'immediate' }
+  | { type: 'scheduled_once'; executeAt: string }
+  | { type: 'scheduled_periodic'; intervalMinutes: number };
+
+/**
+ * Result of interpreting a natural language message for workflow execution
+ */
+export interface WorkflowInterpretation {
+  isWorkflowRequest: boolean;
+  workflowName?: string;
+  parameters?: Record<string, unknown>;
+  timing?: TimingIntent;
+  interpretation: string;
+  confidence: number;
   error?: string;
 }
