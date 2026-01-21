@@ -5,6 +5,7 @@ import path from 'path';
 import { Plugin, Tool, Workflow } from '../../src/types/plugin.js';
 import { createTools } from './tools.js';
 import { createWorkflows } from './workflows.js';
+import { logger } from '../../src/utils/logger.js';
 
 interface Memory {
   id: string;
@@ -38,7 +39,7 @@ class MemoryPlugin implements Plugin {
     mkdirSync(path.dirname(this.dbPath), { recursive: true });
     this.db = new Database(this.dbPath);
     this.initializeTables();
-    console.log('Memory plugin initialized');
+    logger.info('Memory plugin initialized');
   }
 
   private initializeTables(): void {
@@ -169,7 +170,7 @@ class MemoryPlugin implements Plugin {
       this.db.close();
       this.db = null;
     }
-    console.log('Memory plugin cleaned up');
+    logger.info('Memory plugin cleaned up');
   }
 }
 

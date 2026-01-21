@@ -2,6 +2,7 @@ import { Plugin, Tool, Workflow } from '../../src/types/plugin.js';
 import { IdfmPrimApiClient } from './api-client.js';
 import { createTools } from './tools.js';
 import { createWorkflows } from './workflows.js';
+import { logger } from '../../src/utils/logger.js';
 
 /**
  * IDFM PRIM Plugin provides access to Île-de-France Mobilités public transport data.
@@ -21,12 +22,12 @@ class IdfmPrimPlugin implements Plugin {
     const apiKey = process.env.IDFM_PRIM_API_KEY;
 
     if (!apiKey) {
-      console.warn('IDFM PRIM plugin: IDFM_PRIM_API_KEY not set. Plugin will not function.');
+      logger.warn('IDFM PRIM plugin: IDFM_PRIM_API_KEY not set. Plugin will not function.');
       return;
     }
 
     this.client = new IdfmPrimApiClient(apiKey);
-    console.log('IDFM PRIM plugin initialized');
+    logger.info('IDFM PRIM plugin initialized');
   }
 
   getTools(): Tool[] {
@@ -42,7 +43,7 @@ class IdfmPrimPlugin implements Plugin {
 
   async cleanup(): Promise<void> {
     this.client = null;
-    console.log('IDFM PRIM plugin cleaned up');
+    logger.info('IDFM PRIM plugin cleaned up');
   }
 
   /**

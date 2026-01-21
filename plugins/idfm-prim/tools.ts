@@ -1,6 +1,25 @@
 import { z } from 'zod';
 import { Tool } from '../../src/types/plugin.js';
 import { IdfmPrimApiClient } from './api-client.js';
+import { logger } from '../../src/utils/logger.js';
+
+/**
+ * Wrap a tool execute function with error logging and raw error response.
+ */
+function wrapExecute<T>(
+  toolName: string,
+  fn: (params: T) => Promise<string>
+): (params: unknown) => Promise<string> {
+  return async (params: unknown): Promise<string> => {
+    try {
+      return await fn(params as T);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      logger.error(`Tool ${toolName} failed:`, error);
+      return `Error: ${errorMessage}`;
+    }
+  };
+}
 
 /**
  * Create IDFM PRIM plugin tools.
@@ -21,12 +40,8 @@ export function createTools(client: IdfmPrimApiClient): Tool[] {
           count: z.number().optional().describe('Maximum number of results (default: 10)'),
         }),
       },
-      execute: async (params) => {
-        const { query, type, count } = params as {
-          query: string;
-          type?: string[];
-          count?: number;
-        };
+      execute: wrapExecute('idfm_search_places', async (params: { query: string; type?: string[]; count?: number }) => {
+        const { query, type, count } = params;
 
         const places = await client.searchPlaces(query, { type, count });
 
@@ -42,7 +57,7 @@ export function createTools(client: IdfmPrimApiClient): Tool[] {
           .join('\n');
 
         return `Found ${places.length} place(s):\n${results}`;
-      },
+      }),
     },
 
     {
@@ -61,12 +76,8 @@ export function createTools(client: IdfmPrimApiClient): Tool[] {
             .describe('Data freshness: realtime (default) or base_schedule'),
         }),
       },
-      execute: async (params) => {
-        const { station, count, data_freshness } = params as {
-          station: string;
-          count?: number;
-          data_freshness?: 'realtime' | 'base_schedule';
-        };
+      execute: wrapExecute('idfm_next_departures', async (params: { station: string; count?: number; data_freshness?: 'realtime' | 'base_schedule' }) => {
+        const { station, count, data_freshness } = params;
 
         const departures = await client.getNextDepartures(station, {
           count,
@@ -87,7 +98,7 @@ export function createTools(client: IdfmPrimApiClient): Tool[] {
           .join('\n');
 
         return `Next departures at ${station}:\n${results}`;
-      },
+      }),
     },
 
     {
@@ -119,7 +130,17 @@ export function createTools(client: IdfmPrimApiClient): Tool[] {
           max_nb_journeys: z.number().optional().describe('Maximum number of journey alternatives'),
         }),
       },
-      execute: async (params) => {
+      execute: wrapExecute('idfm_plan_itinerary', async (params: {
+        from: string;
+        to: string;
+        departure_time?: string;
+        arrival_time?: string;
+        max_nb_transfers?: number;
+        wheelchair?: boolean;
+        first_section_mode?: string[];
+        last_section_mode?: string[];
+        max_nb_journeys?: number;
+      }) => {
         const {
           from,
           to,
@@ -130,17 +151,7 @@ export function createTools(client: IdfmPrimApiClient): Tool[] {
           first_section_mode,
           last_section_mode,
           max_nb_journeys,
-        } = params as {
-          from: string;
-          to: string;
-          departure_time?: string;
-          arrival_time?: string;
-          max_nb_transfers?: number;
-          wheelchair?: boolean;
-          first_section_mode?: string[];
-          last_section_mode?: string[];
-          max_nb_journeys?: number;
-        };
+        } = params;
 
         const result = await client.planItinerary(from, to, {
           departureTime: departure_time,
@@ -188,8 +199,45 @@ export function createTools(client: IdfmPrimApiClient): Tool[] {
           }
         }
 
+        // Check for disruptions on lines used in this journey
+        const linesUsed = new Set<string>();
+        for (const section of result.sections) {
+          if (section.mode === 'public_transport' && section.line) {
+            linesUsed.add(section.line);
+          }
+        }
+
+        if (linesUsed.size > 0) {
+          const allDisruptions = [];
+          for (const lineName of linesUsed) {
+            try {
+              const disruptions = await client.getDisruptions('line', lineName);
+              if (disruptions.length > 0) {
+                allDisruptions.push({ line: lineName, disruptions });
+              }
+            } catch (error) {
+              // Silently fail disruption checks - don't break itinerary display
+              logger.warn(`Failed to check disruptions for line ${lineName}:`, error);
+            }
+          }
+
+          if (allDisruptions.length > 0) {
+            output += `\n⚠️ Disruptions on your route:\n`;
+            for (const { line, disruptions } of allDisruptions) {
+              output += `\n${line}:\n`;
+              for (const d of disruptions) {
+                output += `  • [${d.severity || 'unknown'}] ${d.title || 'Disruption'}`;
+                if (d.message) {
+                  output += `: ${d.message}`;
+                }
+                output += '\n';
+              }
+            }
+          }
+        }
+
         return output;
-      },
+      }),
     },
 
     {
@@ -208,12 +256,8 @@ export function createTools(client: IdfmPrimApiClient): Tool[] {
           language: z.string().optional().describe('Language for messages (e.g., "fr", "en")'),
         }),
       },
-      execute: async (params) => {
-        const { scope, id_or_name, language } = params as {
-          scope: 'all' | 'line' | 'vehicle_journey';
-          id_or_name?: string;
-          language?: string;
-        };
+      execute: wrapExecute('idfm_disruptions', async (params: { scope: 'all' | 'line' | 'vehicle_journey'; id_or_name?: string; language?: string }) => {
+        const { scope, id_or_name, language } = params;
 
         const disruptions = await client.getDisruptions(scope, id_or_name, { language });
 
@@ -242,7 +286,7 @@ export function createTools(client: IdfmPrimApiClient): Tool[] {
 
         const scopeDesc = scope === 'all' ? 'Île-de-France' : id_or_name;
         return `Disruptions for ${scopeDesc} (${disruptions.length}):\n\n${results}`;
-      },
+      }),
     },
 
     {
@@ -265,15 +309,15 @@ export function createTools(client: IdfmPrimApiClient): Tool[] {
           wheelchair: z.boolean().optional().describe('Require wheelchair accessibility'),
         }),
       },
-      execute: async (params) => {
-        const { from, to, datetime, datetime_represents, boundary_duration, wheelchair } = params as {
-          from?: string;
-          to?: string;
-          datetime?: string;
-          datetime_represents?: 'departure' | 'arrival';
-          boundary_duration?: number[];
-          wheelchair?: boolean;
-        };
+      execute: wrapExecute('idfm_isochrone', async (params: {
+        from?: string;
+        to?: string;
+        datetime?: string;
+        datetime_represents?: 'departure' | 'arrival';
+        boundary_duration?: number[];
+        wheelchair?: boolean;
+      }) => {
+        const { from, to, datetime, datetime_represents, boundary_duration, wheelchair } = params;
 
         if (!from && !to) {
           return 'Error: Either "from" or "to" must be specified';
@@ -298,7 +342,7 @@ export function createTools(client: IdfmPrimApiClient): Tool[] {
           .join('\n');
 
         return `Isochrone ${direction} ${location}:\n${zones}`;
-      },
+      }),
     },
   ];
 }
